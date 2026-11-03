@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gatos Enamorados al Atardecer</title>
+    <style>
+        /* Reseteo básico y eliminación de barras de desplazamiento */
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+        }
+
+        /* El canvas ocupará toda la pantalla */
+        #scene {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* Pequeño texto decorativo, opcional */
+        #overlay-text {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: rgba(255, 255, 255, 0.4);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 14px;
+            pointer-events: none;
+            user-select: none;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="scene"></canvas>
+    <div id="overlay-text">Atardecer Infinito</div>
+
+    <script>
+        const canvas = document.getElementById('scene');
+        const ctx = canvas.getContext('2d');
+
+        // Variables globales
+        let width, height;
+        let mountains = [];
+        let clouds = [];
+        let birds = [];
+        let stars = [];
+        let hearts = [];
+        let shootingStars = [];
+
+        // Función de utilidad para interpolar colores (transiciones suaves)
+        function lerp(a, b, t) {
+            return a + (b - a) * t;
+        }
+
+        function lerpColor(hex1, hex2, t) {
+            // Aseguramos que t esté entre 0 y 1
+            t = Math.max(0, Math.min(1, t));
+            
+            // Convertimos hex a RGB
+            const r1 = parseInt(hex1.substring(1, 3), 16);
+            const g1 = parseInt(hex1.substring(3, 5), 16);
+            const b1 = parseInt(hex1.substring(5, 7), 16);
+            
+            const r2 = parseInt(hex2.substring(1, 3), 16);
+            const g2 = parseInt(hex2.substring(3, 5), 16);
+            const b2 = parseInt(hex2.substring(5, 7), 16);
+            
+            // Interpolamos
+            const r = Math.round(lerp(r1, r2, t));
+            const g = Math.round(lerp(g1, g2, t));
+            const b = Math.round(lerp(b1, b2, t));
+            
+            return `rgb(${r},${g},${b})`;
+        }
+
+        // --- CLASES DE ELEMENTOS ---
+
+        class Star {
+            constructor() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * height * 0.7; // Las estrellas se concentran arriba
+                this.radius = Math.random() * 1.5;
+                this.blinkOffset = Math.random() * Math.PI * 2;
+            }
+            draw(nightOpacity) {
+                if (nightOpacity <= 0) return;
+                // Efecto de parpadeo (twinkle)
+                const blink = (Math.sin(Date.now() * 0.002 + this.blinkOffset) + 1) / 2;
+                ctx.globalAlpha = nightOpacity * (0.2 + 0.8 * blink);
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        class Cloud {
+            constructor() {
+                this.x = Math.random() * width;
+                this.y = height * 0.1 + Math.random() * height * 0.35;
+                this.speed = 0.05 + Math.random() * 0.15; // Más lento, realista
+                this.scale = 0.5 + Math.random() * 1.5;
+                this.parts = [];
+                const numParts = 6 + Math.floor(Math.random() * 6); // Más volumen
+                
+                // Forma de nube realista: base más plana, crecimientos hacia arriba
+                for(let i = 0; i < numParts; i++) {
+                    this.parts.push({
+                        ox: (Math.random() - 0.5) * 90, // Dispersión horizontal
+                        oy: -Math.random() * 40,        // Crecimiento vertical hacia arriba
+                        r: 25 + Math.random() * 40      // Tamaño de cada "copo"
+                    });
+                }
+            }
+            update() {
+                this.x += this.speed;
+                if (this.x - 100 * this.scale > width) {
+                    this.x = -100 * this.scale;
+                    this.y = height * 0.1 + Math.random() * height * 0.35;
+                }
+            }
+            draw(t) {
+                // Tinte de las nubes basado en la posición del sol
+                let cloudColor;
+                if (t > 0.5) {
+                    // Día a Atardecer
+                    cloudColor = lerpColor('#ffb6c1', '#ffffff', (t - 0.5) * 2); 
+                } else {
+                    // Atardecer a Noche
+                    cloudColor = lerpColor('#1d152b', '#ffb6c1', t * 2);
+                }
+
+                // Extraer RGB para el gradiente suave
+                const rgbMatch = cloudColor.match(/\d+/g);
+                if (!rgbMatch) return;
+                const r = rgbMatch[0], g = rgbMatch[1], b = rgbMatch[2];
+
+                for (let part of this.parts) {
+                    const cx = this.x + part.ox * this.scale;
+                    const cy = this.y + part.oy * this.scale;
+                    const rad = part.r * this.scale;
+                    
+                    // Efecto de difuminado radial para hacerlas ver esponjosas y realistas
+                    const grad = ctx.createRadialGradient(cx, cy, rad * 0.1, cx, cy, rad);
+                    grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.85)`);
+                    grad.addColorStop(0.6, `rgba(${r}, ${g}, ${b}, 0.4)`);
+                    grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+                    
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        }
+
+        class ShootingStar {
+            constructor() {
+                this.reset();
+                this.active = false;
+            }
+            reset() {
+                this.x = Math.random() * width * 1.2;
+                this.y = -50 - Math.random() * 200;
+                this.length = 60 + Math.random() * 80;
+                this.speed = 12 + Math.random() * 10;
+                // Ángulo de caída diagonal (aprox 30-45 grados)
+                this.angle = Math.PI / 6 + Math.random() * 0.3; 
+                this.opacity = 1;
+            }
+            update(nightOpacity) {
+                if (!this.active) {
+                    // Solo aparecen si es de noche oscura
+                    if (nightOpacity > 0.3 && Math.random() < 0.003) { 
+                        this.reset();
+                        this.active = true;
+                    }
+                    return;
+                }
+                
+                this.x += Math.cos(this.angle) * this.speed;
+                this.y += Math.sin(this.angle) * this.speed;
+                this.opacity -= 0.015; // Se desvanecen en su trayecto
+                
+                if (this.opacity <= 0 || this.y > height || this.x > width + 100) {
+                    this.active = false;
+                }
+            }
+            draw(nightOpacity) {
+                if (!this.active || nightOpacity <= 0) return;
+                
+                ctx.globalAlpha = Math.max(0, this.opacity * nightOpacity);
+                const tailX = this.x - Math.cos(this.angle) * this.length;
+                const tailY = this.y - Math.sin(this.angle) * this.length;
+                
+                // Cola del cometa
+                let grad = ctx.createLinearGradient(this.x, this.y, tailX, tailY);
+                grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+                grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y);
+                ctx.lineTo(tailX, tailY);
+                ctx.strokeStyle = grad;
+                ctx.lineWidth = 2.5;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+                
+                // Brillo de la cabeza
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 2, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.shadowBlur = 12;
+                ctx.shadowColor = '#ffffff';
+                ctx.fill();
+                ctx.shadowBlur = 0; // Restaurar
+                
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        class Bird {
+            constructor() {
+                this.reset();
+                this.x = Math.random() * width; // Posición inicial aleatoria al cargar
+            }
+            reset() {
+                this.y = height * 0.1 + Math.random() * height * 0.3;
+                this.x = -50;
+                this.speed = 1.5 + Math.random() * 1.5;
+                this.scale = 0.3 + Math.random() * 0.4;
+                this.flapSpeed = 0.07 + Math.random() * 0.05;
+                this.flapOffset = Math.random() * 10;
+            }
+            update() {
+                this.x += this.speed;
+                this.y += Math.sin(this.x * 0.01) * 0.3; // Vuelo ondulado ligero
+                if (this.x > width + 50) this.reset();
+            }
+            draw(dayOpacity) {
+                if (dayOpacity <= 0) return; // No se ven de noche oscura
+                
+                const flap = Math.sin(this.x * this.flapSpeed + this.flapOffset); 
+                
+                ctx.globalAlpha = dayOpacity * 0.8;
+                ctx.strokeStyle = '#1a0b12';
+                ctx.lineWidth = 3 * this.scale;
+                ctx.lineJoin = 'round';
+                ctx.lineCap = 'round';
+
+                ctx.beginPath();
+                // Ala izquierda
+                ctx.moveTo(this.x, this.y);
+                ctx.quadraticCurveTo(this.x - 15 * this.scale, this.y - 15 * flap * this.scale, this.x - 25 * this.scale, this.y - 5 * flap * this.scale);
+                // Ala derecha
+                ctx.moveTo(this.x, this.y);
+                ctx.quadraticCurveTo(this.x + 15 * this.scale, this.y - 15 * flap * this.scale, this.x + 25 * this.scale, this.y - 5 * flap * this.scale);
+                ctx.stroke();
+                
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        class Heart {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.size = Math.random() * 4 + 4;
+                this.speed = Math.random() * 1 + 1;
+                this.life = 1;
+                this.drift = (Math.random() - 0.5) * 2;
+            }
+            update() {
+                this.y -= this.speed;
+                this.x += Math.sin(this.y * 0.05) * this.drift;
+                this.life -= 0.008; // Velocidad de desvanecimiento
+            }
+            draw() {
+                if (this.life <= 0) return;
+                ctx.globalAlpha = this.life;
+                ctx.fillStyle = '#ff3366';
+                
+                ctx.beginPath();
+                // Fórmula de la curva del corazón
+                ctx.moveTo(this.x, this.y);
+                ctx.bezierCurveTo(this.x - this.size, this.y - this.size, this.x - this.size * 1.5, this.y + this.size * 0.5, this.x, this.y + this.size * 1.2);
+                ctx.bezierCurveTo(this.x + this.size * 1.5, this.y + this.size * 0.5, this.x + this.size, this.y - this.size, this.x, this.y);
+                ctx.fill();
+                
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        // --- FUNCIONES DE DIBUJO DE ESCENARIO ---
+
+        function generateMountainPath(heightFactor, variation) {
+            let points = [];
+            const segments = Math.floor(width / 50);
+            const step = width / segments;
+            let currentY = height * heightFactor;
+            
+            points.push({x: 0, y: currentY});
+            for(let i = 1; i <= segments; i++) {
+                currentY += (Math.random() - 0.5) * variation;
+                // Restringimos para que no se salga mucho de su franja
+                currentY = Math.max(height * (heightFactor - 0.1), Math.min(currentY, height * (heightFactor + 0.1)));
+                points.push({x: i * step, y: currentY});
+            }
+            return points;
+        }
+
+        function initScene() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+
+            // Generar montañas (fondo y medio)
+            mountains = [];
+            mountains.push({
+                path: generateMountainPath(0.55, 120),
+                colorDay: '#4a4066', colorNight: '#1a1c29'
+            });
+            mountains.push({
+                path: generateMountainPath(0.70, 80),
+                colorDay: '#2f2545', colorNight: '#11131c'
+            });
+
+            // Generar nubes, aves y estrellas
+            clouds = [];
+            for (let i = 0; i < 8; i++) clouds.push(new Cloud());
+            
+            birds = [];
+            for (let i = 0; i < 6; i++) birds.push(new Bird());
+
+            stars = [];
+            for (let i = 0; i < 150; i++) stars.push(new Star());
+
+            shootingStars = [];
+            for (let i = 0; i < 5; i++) shootingStars.push(new ShootingStar());
+
+            hearts = [];
+        }
+
+        function drawSkyAndSun(t) {
+            // t va de 0 (noche) a 1 (día)
+            
+            // 1. DIBUJAR CIELO
+            let topColor, botColor;
+            if (t > 0.5) {
+                // Día a Atardecer
+                let phase = (1 - t) * 2; // 0 (día) a 1 (atardecer)
+                topColor = lerpColor('#4facfe', '#ff7e5f', phase);
+                botColor = lerpColor('#00f2fe', '#feb47b', phase);
+            } else {
+                // Atardecer a Noche
+                let phase = (0.5 - t) * 2; // 0 (atardecer) a 1 (noche)
+                topColor = lerpColor('#ff7e5f', '#0b1021', phase);
+                botColor = lerpColor('#feb47b', '#261b33', phase);
+            }
+
+            const gradient = ctx.createLinearGradient(0, 0, 0, height);
+            gradient.addColorStop(0, topColor);
+            gradient.addColorStop(1, botColor);
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, width, height);
+
+            // 2. DIBUJAR SOL
+            if (t > 0.05) { // Ocultar cuando es muy de noche
+                // Posición Y del sol depende de 't'
+                // Cuando t=1 (día) y=height*0.2, Cuando t=0 (noche) y=height*0.8
+                const sunY = height * 0.8 - (t * height * 0.6); 
+                const sunX = width * 0.4; // Ligeramente a la izquierda
+
+                const sunColor = lerpColor('#ff4500', '#fff390', t);
+                
+                ctx.beginPath();
+                ctx.arc(sunX, sunY, 45, 0, Math.PI * 2);
+                ctx.fillStyle = sunColor;
+                
+                // Efecto de resplandor (Glow)
+                ctx.shadowBlur = 60 + t * 40;
+                ctx.shadowColor = sunColor;
+                ctx.fill();
+                ctx.shadowBlur = 0; // Restaurar
+            }
+        }
+
+        function drawAuroras(nightOpacity) {
+            if (nightOpacity <= 0) return;
+            
+            const time = Date.now() * 0.0004; // Velocidad de movimiento de la aurora
+            ctx.globalAlpha = nightOpacity * 0.5; // Intensidad máxima
+            ctx.globalCompositeOperation = 'screen'; // Mezcla luminosa con el fondo
+            
+            const numBands = 3;
+            const colors = [
+                'rgba(43, 255, 150, 0.4)', // Verde clásico
+                'rgba(43, 200, 255, 0.3)', // Cyan
+                'rgba(180, 100, 255, 0.2)' // Tono púrpura
+            ];
+
+            for (let i = 0; i < numBands; i++) {
+                ctx.beginPath();
+                let startY = height * 0.05 + (i * 40);
+                
+                // Generar curva senoidal fluida de lado a lado
+                for (let x = 0; x <= width + 50; x += 50) {
+                    let y = startY 
+                            + Math.sin(x * 0.002 + time + i) * 50 
+                            + Math.sin(x * 0.005 - time * 1.2 + i * 2) * 30;
+                    
+                    if (x === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                
+                ctx.lineTo(width, 0);
+                ctx.lineTo(0, 0);
+                
+                // Gradiente vertical para desvanecimiento suave hacia abajo
+                let grad = ctx.createLinearGradient(0, 0, 0, height * 0.5);
+                grad.addColorStop(0, colors[i]);
+                grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                
+                ctx.fillStyle = grad;
+                ctx.fill();
+            }
+            
+            ctx.globalCompositeOperation = 'source-over'; // Restaurar a normal
+            ctx.globalAlpha = 1;
+        }
+
+        function drawMountains(t) {
+            for (let layer of mountains) {
+                const color = lerpColor(layer.colorNight, layer.colorDay, t);
+                ctx.fillStyle = color;
+                
+                ctx.beginPath();
+                ctx.moveTo(0, height);
+                ctx.lineTo(layer.path[0].x, layer.path[0].y);
+                
+                // Suavizado de picos usando curvas cuadráticas
+                for(let i = 0; i < layer.path.length - 1; i++) {
+                    const p1 = layer.path[i];
+                    const p2 = layer.path[i+1];
+                    const midX = (p1.x + p2.x) / 2;
+                    const midY = (p1.y + p2.y) / 2;
+                    ctx.quadraticCurveTo(p1.x, p1.y, midX, midY);
+                }
+                
+                const last = layer.path[layer.path.length - 1];
+                ctx.lineTo(last.x, last.y);
+                ctx.lineTo(width, height);
+                ctx.fill();
+            }
+        }
+
+        function drawForeground() {
+            // La colina en primer plano donde se sientan los gatos
+            ctx.fillStyle = '#020105'; // Silueta casi negra absoluta y profunda
+            ctx.beginPath();
+            ctx.moveTo(0, height);
+            ctx.lineTo(0, height * 0.85);
+            // Curva suave para formar la colina derecha
+            ctx.quadraticCurveTo(width * 0.4, height * 0.88, width * 0.75, height * 0.82); 
+            ctx.quadraticCurveTo(width * 0.9, height * 0.79, width, height * 0.84);
+            ctx.lineTo(width, height);
+            ctx.fill();
+        }
+
+        function drawCatsAndHearts(t) {
+            // Posición base de los gatos
+            const catX = width * 0.75;
+            const catY = height * 0.82; 
+
+            // Generar corazones aleatoriamente
+            if (Math.random() < 0.015) {
+                hearts.push(new Heart(catX - 5, catY - 45));
+            }
+
+            // Actualizar y dibujar corazones
+            for (let i = hearts.length - 1; i >= 0; i--) {
+                hearts[i].update();
+                hearts[i].draw();
+                if (hearts[i].life <= 0) hearts.splice(i, 1);
+            }
+
+            ctx.fillStyle = '#020105'; // Silueta oscura más profunda para mayor contraste
+
+            // Efecto de luz de luna (resplandor) para que resalten en la noche
+            const nightIntensity = Math.max(0, 1 - (t * 2)); 
+            if (nightIntensity > 0) {
+                ctx.shadowColor = `rgba(170, 200, 255, ${nightIntensity * 0.5})`;
+                ctx.shadowBlur = 15;
+            }
+
+            // --- GATO 1 (Izquierda, más grande) ---
+            // Cuerpo
+            ctx.beginPath();
+            ctx.ellipse(catX - 18, catY, 20, 32, -0.1, 0, Math.PI * 2);
+            ctx.fill();
+            // Cabeza
+            ctx.beginPath();
+            ctx.arc(catX - 22, catY - 30, 13, 0, Math.PI * 2);
+            ctx.fill();
+            // Orejas
+            ctx.beginPath();
+            ctx.moveTo(catX - 32, y = catY - 35); ctx.lineTo(catX - 30, catY - 50); ctx.lineTo(catX - 18, catY - 40);
+            ctx.moveTo(catX - 16, catY - 38); ctx.lineTo(catX - 10, catY - 48); ctx.lineTo(catX - 10, catY - 36);
+            ctx.fill();
+
+            // --- GATO 2 (Derecha, apoyándose) ---
+            // Cuerpo
+            ctx.beginPath();
+            ctx.ellipse(catX + 8, catY + 5, 16, 26, -0.25, 0, Math.PI * 2);
+            ctx.fill();
+            // Cabeza
+            ctx.beginPath();
+            ctx.arc(catX, catY - 20, 11, 0, Math.PI * 2);
+            ctx.fill();
+            // Orejas
+            ctx.beginPath();
+            ctx.moveTo(catX - 8, catY - 26); ctx.lineTo(catX - 8, catY - 38); ctx.lineTo(catX, catY - 30);
+            ctx.moveTo(catX + 5, catY - 28); ctx.lineTo(catX + 11, catY - 37); ctx.lineTo(catX + 9, catY - 25);
+            ctx.fill();
+
+            // --- COLAS ENTRELAZADAS (Formando sutilmente un corazón) ---
+            ctx.strokeStyle = '#020105';
+            ctx.lineWidth = 4.5;
+            ctx.lineCap = 'round';
+            
+            // Cola gato izquierdo
+            ctx.beginPath();
+            ctx.moveTo(catX - 32, catY + 22);
+            ctx.bezierCurveTo(catX - 55, catY + 35, Math.max(catX - 20, 0), catY + 65, catX - 4, catY + 35);
+            ctx.stroke();
+            
+            // Cola gato derecho
+            ctx.beginPath();
+            ctx.moveTo(catX + 20, catY + 22);
+            ctx.bezierCurveTo(catX + 40, catY + 35, catX, catY + 65, catX - 10, catY + 35);
+            ctx.stroke();
+
+            // Restaurar sombra para que no afecte a otras partes
+            ctx.shadowBlur = 0;
+            ctx.shadowColor = 'transparent';
+        }
+
+        // --- BUCLE DE ANIMACIÓN ---
+
+        function animate() {
+            // Ciclo de tiempo continuo para el atardecer (aprox 24 segundos por ciclo completo)
+            // Usamos Math.sin para oscilar suavemente entre noche (-1) y día (1)
+            const timeCycle = Math.sin(Date.now() / 6000); 
+            // Normalizamos 't' para que vaya de 0 (noche) a 1 (día)
+            const t = (timeCycle + 1) / 2; 
+
+            // Limpiar
+            ctx.clearRect(0, 0, width, height);
+
+            // 1. Cielo, Sol y Estrellas
+            drawSkyAndSun(t);
+            
+            const nightOpacity = 1 - Math.min(1, t * 2); // 1 en la noche, 0 en el día
+            
+            // Auroras boreales (solo visibles de noche)
+            drawAuroras(nightOpacity);
+
+            stars.forEach(star => star.draw(nightOpacity));
+
+            // Cometas (Estrellas fugaces)
+            shootingStars.forEach(shooting => {
+                shooting.update(nightOpacity);
+                shooting.draw(nightOpacity);
+            });
+
+            // 2. Nubes (atrás de las montañas)
+            clouds.forEach(cloud => {
+                cloud.update();
+                cloud.draw(t);
+            });
+
+            // 3. Montañas (fondo)
+            drawMountains(t);
+
+            // 4. Aves
+            const dayOpacity = Math.min(1, t * 2.5); // Desaparecen en la noche profunda
+            birds.forEach(bird => {
+                bird.update();
+                bird.draw(dayOpacity);
+            });
+
+            // 5. Primer plano (Colina y Gatos)
+            drawForeground();
+            drawCatsAndHearts(t);
+
+            requestAnimationFrame(animate);
+        }
+
+        // Inicialización y manejo de redimensionado
+        window.addEventListener('resize', initScene);
+        initScene();
+        animate();
+
+    </script>
+</body>
+</html>
